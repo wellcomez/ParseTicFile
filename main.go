@@ -1,10 +1,11 @@
 package main
 
 import (
-	"os"
-	"ParseTicFile/tic"
 	"fmt"
+	"os"
 	"strings"
+
+	"./tic"
 )
 
 func main() {
