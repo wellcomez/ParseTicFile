@@ -24,21 +24,44 @@ const tradingDays = new Tradeday();
 // var url = "http://www.tdx.com.cn/products/data/data/2ktic/20180131.zip";
 function downloadRequest(url, end) {
   const filepath = url.split('/').reverse()[0];
+  const filenamehtml = `${filepath}.html`;
+  const tmpfile = `_${filepath}`;
   let result;
+  let contentType;
+  if (fs.existsSync(filepath)) {
+    end(filepath, undefined, url);
+    return;
+  }
+
+  if (fs.existsSync(filenamehtml)) {
+    end(filenamehtml, undefined, url);
+    return;
+  }
   progress(request(url))
     .on('progress', (state) => {
       const { percent, speed } = state;
       result = state;
       console.log(url, `${(percent * 100).toFixed(2)}%`, `${(speed / 1000).toFixed(2)}K`);
     })
+    .on('response', (a) => {
+      contentType = a.headers['content-type'];
+      console.log(contentType, url);
+    })
     .on('error', (err) => {
       console.log(err);
       end(result, err, url);
     })
     .on('end', () => {
-      end(result, undefined, url);
+      let filename = filepath;
+      if (contentType) {
+        if (contentType != 'application/zip') {
+          filename = filenamehtml;
+        }
+      }
+      fs.renameSync(tmpfile, filename);
+      end(filename, undefined, url);
     })
-    .pipe(fs.createWriteStream(filepath));
+    .pipe(fs.createWriteStream(tmpfile));
 }
 
 function download_date(date, cb) {
