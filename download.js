@@ -63,6 +63,18 @@ function downloadRequest(url, end) {
     })
     .pipe(fs.createWriteStream(tmpfile));
 }
+// http://www.tdx.com.cn/products/data/data/newday/
+// TYPE08=7
+// PATH08=http://www.tdx.com.cn/products/data/data/g3day/
+// FILE08=YYYYMMDD.zip
+
+// TYPE09=8
+// PATH09=products/data/data/g3tic/
+// FILE09=YYYYMMDD.zip
+
+// TYPE10=9
+// PATH10=products/data/data/newday/
+// FILE10=YYYYMMDD.zip
 
 function download_date(date, cb) {
   const days = date.format('YYYYMMDD');
@@ -71,19 +83,18 @@ function download_date(date, cb) {
 }
 class Download {
   constructor() {
-    this.year = 2018;
+    this.year = 2015;
     this.month = 0;
     this.day = 1;
     const { year, month, day } = this;
     this.day = moment([year, month, day]);
     this.count = 0;
-    this.startloop = false;
+    this.startloop = undefined;
   }
 
   run() {
-    if (this.startloop == false) {
-      this.startloop = true;
-      setInterval(() => {
+    if (this.startloop == undefined) {
+      this.startloop = setInterval(() => {
         this.run();
       }, 1000);
     }
@@ -91,6 +102,14 @@ class Download {
       return;
     }
     const next = this.getNext();
+    if (next > moment()) {
+      try {
+        clearInterval(this.startloop);
+      } catch (error) {
+        console.error(error);
+      }
+      return;
+    }
     this.count++;
     download_date(next, (a, error, url) => {
       this.count--;
