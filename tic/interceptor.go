@@ -1,11 +1,14 @@
 package tic
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
+	"os"
 	"reflect"
 	"runtime/debug"
 
@@ -288,7 +291,65 @@ func parseTickDetail(byTicDetail []byte, tickItem TickDetailModel) ([]TickTradeD
 	return tradeDetails, nil
 }
 
-func ParseTickItem(byteTic []byte) {
+type ohlc struct {
+	Open  float64
+	High  float64
+	Low   float64
+	Close float64
+	Vol   int
+	Seq   int
+	Index int
+}
+
+func GetKline(ticks []TickTradeDetail, market string, code string, tv int) ([]ohlc, error) {
+	var klines []ohlc
+	var k ohlc
+	n := 0
+	price := float64(ticks[0].Price) / 100.0
+	k = ohlc{
+		Open:  price,
+		Close: price,
+		High:  price,
+		Low:   price,
+		Vol:   0,
+		Seq:   ticks[0].Time,
+		Index: 0,
+	}
+	for _, item := range ticks {
+		price := float64(item.Price) / 100.0
+		if item.Time > 235 {
+			print("")
+		}
+		if item.Time/tv <= n {
+			k.Vol = item.Volume + k.Vol
+			k.Close = price
+			k.High = math.Max(k.High, price)
+			k.Low = math.Min(k.Low, price)
+		} else {
+			klines = append(klines, k)
+			index2 := item.Time / tv
+
+			for idx := k.Index + 1; idx < index2; idx++ {
+				k.Index = k.Index + 1
+				k.Vol = 0
+				klines = append(klines, k)
+			}
+			k = ohlc{
+				Open:  price,
+				Close: price,
+				High:  price,
+				Low:   price,
+				Vol:   item.Volume,
+				Seq:   item.Time,
+				Index: k.Index + 1,
+			}
+			n = n + 1
+		}
+	}
+	klines = append(klines, k)
+	return klines, nil
+}
+func getTradeDetails(byteTic []byte) ([]TickTradeDetail, error) {
 	var tickItem TickItem
 	var newBuffer bytes.Buffer
 	var tickDetailModel TickDetailModel
@@ -311,7 +372,21 @@ func ParseTickItem(byteTic []byte) {
 	byteTicDetail, _ := leBuffer.ReadBuff(leBuffer.Right())
 
 	tradeDetails, err := parseTickDetail(byteTicDetail, tickDetailModel)
+	return tradeDetails, err
+}
+func sav2Kline(ticks []TickTradeDetail, market string, stockCode string, tv int) {
+	k1f, err := GetKline(ticks, market, stockCode, tv)
+	if err == nil {
+		lang, err := json.Marshal(k1f)
+		if err == nil {
+			save2json(lang, fmt.Sprintf("%s.%s_K_%dM", market, stockCode, tv))
+		}
 
+	}
+}
+func ParseTickItem(byteTic []byte, market string, stockCode string) {
+
+	tradeDetails, err := getTradeDetails(byteTic)
 	if nil != err {
 		fmt.Printf("解析tck详情时报错: %s", err.Error())
 		return
@@ -319,11 +394,52 @@ func ParseTickItem(byteTic []byte) {
 
 	fmt.Printf("\t时间,\t价格,\t交易量,\t笔数,\t交易方向\n")
 	for _, item := range tradeDetails {
-		fmt.Printf("\t%s,\t%.2f,\t%d,\t%d,\t%d\n", SetTradeTime(item.Time),
+		fmt.Printf("\t%s,\t%6.2f,\t%6d,\t%6d,\t%6d\n", SetTradeTime(item.Time),
 			float64(item.Price)/100.0, item.Volume, item.Count, item.Type)
 	}
+	sav2Kline(tradeDetails, market, stockCode, 1)
+	sav2Kline(tradeDetails, market, stockCode, 5)
+	lang, err := json.Marshal(tradeDetails)
+	if err == nil {
+		save2json(lang, market+"."+stockCode+"_raw")
+	}
+}
+func save2json(byteTic []byte, filename string) {
+	file, err := os.OpenFile(filename+".json", os.O_WRONLY|os.O_CREATE, 0644) //以写方式打开文件
+	if err != nil {
+		fmt.Println("open file fail err:", err)
+		return
+	}
+	writer := bufio.NewWriter(file) // 创建写对象
+	defer file.Close()
+	writer.Write(byteTic)
+	writer.Flush() // 将缓冲区内容写入文件，默认写入到文件开头
 }
 
+func getParseTickItem(byteTic []byte, market string, stockCode string) ([]TickTradeDetail, error) {
+	var tickItem TickItem
+	var newBuffer bytes.Buffer
+	var tickDetailModel TickDetailModel
+
+	leBuffer := gbytes.NewLittleEndianStream(byteTic)
+
+	rawTickItem, _ := leBuffer.ReadBuff(SizeStruct(TickItem{}))
+	newBuffer.Write(rawTickItem)
+	binary.Read(&newBuffer, binary.LittleEndian, &tickItem)
+
+	tickDetailModel.Date = int(tickItem.DateTime)
+	tickDetailModel.Time = int(byte(tickItem.Type))
+	tickDetailModel.Price = int(tickItem.Price)
+	tickDetailModel.Volume = int(tickItem.Volume)
+	tickDetailModel.Count = int(tickItem.Count)
+	tickDetailModel.Type = int(tickItem.Type)
+	tickDetailModel.VolOffset = int(tickItem.VolOffset)
+	tickDetailModel.VolSize = int(tickItem.VolSize)
+
+	byteTicDetail, _ := leBuffer.ReadBuff(leBuffer.Right())
+
+	return parseTickDetail(byteTicDetail, tickDetailModel)
+}
 func LoadTicFile(filePath string, market int, stockCode string) error {
 	var newBuffer bytes.Buffer
 	var stockTick StockTick
@@ -347,15 +463,21 @@ func LoadTicFile(filePath string, market int, stockCode string) error {
 		rawTickData, _ := leBuffer.ReadBuff(tickSize)
 
 		strCode := gbytes.BytesToString(stockTick.Code[:])
-
-		if int(stockTick.Market) == market && strCode == stockCode {
-			fmt.Printf("开始解析股票: %d%s, date: %d\n", stockTick.Market,
-				gbytes.BytesToString(stockTick.Code[:]), stockTick.Date)
-			ParseTickItem(rawTickData)
-			break
+		marketname := "SZ"
+		if market == 1 {
+			marketname = "SH"
+		}
+		if len(stockCode) > 0 {
+			if int(stockTick.Market) == market && strCode == stockCode {
+				fmt.Printf("开始解析股票: %d%s, date: %d\n", stockTick.Market,
+					gbytes.BytesToString(stockTick.Code[:]), stockTick.Date)
+				ParseTickItem(rawTickData, marketname, stockCode)
+				break
+			}
+		} else {
+			ParseTickItem(rawTickData, marketname, strCode)
 		}
 
 	}
-
 	return nil
 }
