@@ -18,11 +18,16 @@ func main() {
 	market := 0
 	filePath := os.Args[1]
 	strStockCode := os.Args[2]
+	code := ""
+	if strStockCode != "all" {
+		if strings.EqualFold(strStockCode[:2], "sh") {
+			market = 1
+		}
+		code = strStockCode[2:]
+	} else {
 
-	if strings.EqualFold(strStockCode[:2], "sh") {
-		market = 1
 	}
 
-	tic.LoadTicFile(filePath, market, strStockCode[2:])
+	tic.LoadTicFile(filePath, market, code)
 
 }
