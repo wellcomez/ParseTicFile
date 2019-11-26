@@ -392,11 +392,11 @@ func ParseTickItem(byteTic []byte, market string, stockCode string) {
 		return
 	}
 
-	fmt.Printf("\t时间,\t价格,\t交易量,\t笔数,\t交易方向\n")
-	for _, item := range tradeDetails {
-		fmt.Printf("\t%s,\t%6.2f,\t%6d,\t%6d,\t%6d\n", SetTradeTime(item.Time),
-			float64(item.Price)/100.0, item.Volume, item.Count, item.Type)
-	}
+	// fmt.Printf("\t时间,\t价格,\t交易量,\t笔数,\t交易方向\n")
+	// for _, item := range tradeDetails {
+	// 	fmt.Printf("\t%s,\t%6.2f,\t%6d,\t%6d,\t%6d\n", SetTradeTime(item.Time),
+	// 		float64(item.Price)/100.0, item.Volume, item.Count, item.Type)
+	// }
 	sav2Kline(tradeDetails, market, stockCode, 1)
 	sav2Kline(tradeDetails, market, stockCode, 5)
 	lang, err := json.Marshal(tradeDetails)
@@ -464,7 +464,7 @@ func LoadTicFile(filePath string, market int, stockCode string) error {
 
 		strCode := gbytes.BytesToString(stockTick.Code[:])
 		marketname := "SZ"
-		if market == 1 {
+		if stockTick.Market == 1 {
 			marketname = "SH"
 		}
 		if len(stockCode) > 0 {
