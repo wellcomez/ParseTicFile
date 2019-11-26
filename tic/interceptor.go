@@ -120,7 +120,7 @@ func parseTickDTPrice(tradeDetails []TickTradeDetail, leBuffer *gbytes.LittleEnd
 
 	tickDataItem, err := leBuffer.ReadUint32()
 	if err != nil {
-		debug.PrintStack()
+		// debug.PrintStack()
 		return nil, err
 	}
 
@@ -253,9 +253,15 @@ func parseTickDetail(byTicDetail []byte, tickItem TickDetailModel) ([]TickTradeD
 		tickItem.Count, tickItem.Type >> 31})
 
 	// 解析交易时间及价格信息
-	tradeDetails, err = parseTickDTPrice(tradeDetails, leBuffer, tickItem)
+	tradeDetails2, err := parseTickDTPrice(tradeDetails, leBuffer, tickItem)
 	if err != nil {
-		return nil, err
+		if tickItem.Count == 1 {
+			return tradeDetails, err
+		} else {
+			return nil, err
+		}
+	} else {
+		tradeDetails = tradeDetails2
 	}
 
 	// 解析成交量
@@ -349,7 +355,7 @@ func GetKline(ticks []TickTradeDetail, market string, code string, tv int) ([]oh
 	klines = append(klines, k)
 	return klines, nil
 }
-func getTradeDetails(byteTic []byte) ([]TickTradeDetail, error) {
+func getTradeDetails(byteTic []byte) ([]TickTradeDetail, TickDetailModel, error) {
 	var tickItem TickItem
 	var newBuffer bytes.Buffer
 	var tickDetailModel TickDetailModel
@@ -372,40 +378,39 @@ func getTradeDetails(byteTic []byte) ([]TickTradeDetail, error) {
 	byteTicDetail, _ := leBuffer.ReadBuff(leBuffer.Right())
 
 	tradeDetails, err := parseTickDetail(byteTicDetail, tickDetailModel)
-	return tradeDetails, err
+	return tradeDetails, tickDetailModel, err
 }
-func sav2Kline(ticks []TickTradeDetail, market string, stockCode string, tv int) {
+func sav2Kline(date int, ticks []TickTradeDetail, market string, stockCode string, tv int) {
 	k1f, err := GetKline(ticks, market, stockCode, tv)
 	if err == nil {
 		lang, err := json.Marshal(k1f)
 		if err == nil {
-			save2json(lang, fmt.Sprintf("%s.%s_K_%dM", market, stockCode, tv))
+			save2json(lang, fmt.Sprintf("%d_%s.%s_K_%dM", date, market, stockCode, tv))
 		}
 
 	}
 }
 func ParseTickItem(byteTic []byte, market string, stockCode string) {
-
-	tradeDetails, err := getTradeDetails(byteTic)
+	tradeDetails, model, err := getTradeDetails(byteTic)
 	if nil != err {
 		fmt.Printf("解析tck详情时报错: %s", err.Error())
 		return
 	}
-
 	// fmt.Printf("\t时间,\t价格,\t交易量,\t笔数,\t交易方向\n")
 	// for _, item := range tradeDetails {
 	// 	fmt.Printf("\t%s,\t%6.2f,\t%6d,\t%6d,\t%6d\n", SetTradeTime(item.Time),
 	// 		float64(item.Price)/100.0, item.Volume, item.Count, item.Type)
 	// }
-	sav2Kline(tradeDetails, market, stockCode, 1)
-	sav2Kline(tradeDetails, market, stockCode, 5)
+
+	sav2Kline(model.Date, tradeDetails, market, stockCode, 1)
+	sav2Kline(model.Date, tradeDetails, market, stockCode, 5)
 	lang, err := json.Marshal(tradeDetails)
 	if err == nil {
-		save2json(lang, market+"."+stockCode+"_raw")
+		save2json(lang, fmt.Sprintf("%d-%s.%s_raw", model.Date, market, stockCode))
 	}
 }
 func save2json(byteTic []byte, filename string) {
-	file, err := os.OpenFile(filename+".json", os.O_WRONLY|os.O_CREATE, 0644) //以写方式打开文件
+	file, err := os.OpenFile("output/"+filename+".json", os.O_WRONLY|os.O_CREATE, 0644) //以写方式打开文件
 	if err != nil {
 		fmt.Println("open file fail err:", err)
 		return
@@ -467,6 +472,7 @@ func LoadTicFile(filePath string, market int, stockCode string) error {
 		if stockTick.Market == 1 {
 			marketname = "SH"
 		}
+		fmt.Printf("%s %s\n", marketname, strCode)
 		if len(stockCode) > 0 {
 			if int(stockTick.Market) == market && strCode == stockCode {
 				fmt.Printf("开始解析股票: %d%s, date: %d\n", stockTick.Market,
